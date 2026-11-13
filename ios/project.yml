@@ -1,0 +1,16 @@
+name: SmartHome
+options:
+  deploymentTarget:
+    iOS: '16.0'
+targets:
+  SmartHome:
+    type: application
+    platform: iOS
+    sources: [SmartHome]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.smarthome
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: 智能家居
+        SWIFT_VERSION: '5.0'
+        TARGETED_DEVICE_FAMILY: '1'
