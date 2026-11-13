@@ -134,6 +134,7 @@ final class SensorStore: ObservableObject {
             loadedPeriod = selected; loadedRangeStart = rangeStart; points = chart; error = ""
         } catch {
             guard version == generation else { return }
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             if let apiError = error as? APIError, case .status(404) = apiError { self.error = "暂无温湿度数据，请确认设备正在上传" }
             else { self.error = error.localizedDescription }
         }
@@ -149,6 +150,9 @@ final class SensorStore: ObservableObject {
             let known = Set(history.map(\.id))
             history.append(contentsOf: page.items.filter { !known.contains($0.id) })
             nextBeforeId = page.nextBeforeId
-        } catch { if version == generation { self.error = error.localizedDescription } }
+        } catch {
+            if version == generation && !Task.isCancelled && !(error is CancellationError)
+                && (error as? URLError)?.code != .cancelled { self.error = error.localizedDescription }
+        }
     }
 }

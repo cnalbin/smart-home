@@ -36,7 +36,8 @@ struct MainView: View {
                 .tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
         }
         .tint(green)
-        .task(id: store.period) { await store.refresh() }
+        .task { await store.refresh() }
+        .onChange(of: store.period) { _ in Task { await store.refresh() } }
         .onReceive(timer) { _ in
             if scenePhase == .active && store.isConfigured { Task { await store.refresh() } }
         }
