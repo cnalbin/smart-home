@@ -144,10 +144,11 @@ final class SensorStore: ObservableObject {
         defer { if version == generation { loading = false } }
         do {
             let newest: Reading = try await request(Reading.self, suffix: "latest")
+            guard version == generation, selected == period else { return }
+            latest = newest
             let page: ReadingPage = try await request(ReadingPage.self, query: rangeQuery(selected) + [URLQueryItem(name: "limit", value: "50")])
             let chart: [ChartPoint] = try await request([ChartPoint].self, suffix: "chart", query: rangeQuery(selected) + [URLQueryItem(name: "bucketSeconds", value: String(selected.bucket))])
             guard version == generation, selected == period else { return }
-            latest = newest
             if loadedPeriod == selected && loadedRangeStart == rangeStart && history.count > 50 {
                 let ids = Set(page.items.map(\.id))
                 history = page.items + history.filter { !ids.contains($0.id) }

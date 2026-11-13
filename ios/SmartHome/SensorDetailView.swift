@@ -132,7 +132,7 @@ struct SettingsView: View {
                     .keyboardType(.URL).autocorrectionDisabled()
                 TextField("设备编号", text: $device).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("API 访问密钥", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Text("输入服务器根地址和 API 密钥。密钥仅保存在本机钥匙串。")
+                Text("服务器和设备编号已预填。请填写后端 API 密钥（不是 Wi-Fi 或 RabbitMQ 密码）；密钥仅保存在本机钥匙串。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !message.isEmpty { Section { Text(message).font(.caption).foregroundStyle(.orange) } }
