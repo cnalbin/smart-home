@@ -121,29 +121,16 @@ struct SensorDetailView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var store: SensorStore
-    @State private var url = ""
-    @State private var device = ""
-    @State private var token = ""
-    @State private var message = ""
     var body: some View {
         Form {
             Section("服务器连接") {
-                TextField("HTTPS 服务器地址", text: $url).textInputAutocapitalization(.never)
-                    .keyboardType(.URL).autocorrectionDisabled()
-                TextField("设备编号", text: $device).textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("API 访问密钥", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Text("服务器和设备编号已预填。请填写后端 API 密钥（不是 Wi-Fi 或 RabbitMQ 密码）；密钥仅保存在本机钥匙串。")
-                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent("设备编号", value: store.deviceId)
+                LabeledContent("连接状态", value: !store.isConfigured ? "配置不可用" :
+                    (store.error.isEmpty ? (store.online ? "设备在线" : "等待数据") : "连接异常"))
+                if !store.error.isEmpty { Text(store.error).font(.caption).foregroundStyle(.orange) }
             }
-            if !message.isEmpty { Section { Text(message).font(.caption).foregroundStyle(.orange) } }
             Section {
-                Button("保存并连接") {
-                    do {
-                        try store.saveSettings(url: url, id: device, secret: token)
-                        message = "已保存，正在连接。"
-                        Task { await store.refresh() }
-                    } catch { message = error.localizedDescription }
-                }.foregroundStyle(green)
+                Button("重新连接") { Task { await store.refresh() } }.foregroundStyle(green)
             }
             Section("说明") {
                 Text("温湿度数据约每 30 秒刷新。其他传感器和控制设备将在后续接入。")
@@ -153,6 +140,5 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(canvas)
         .navigationTitle("设置")
-        .onAppear { url = store.serverURL; device = store.deviceId; token = store.token }
     }
 }

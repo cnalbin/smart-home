@@ -1,0 +1,8 @@
+.env
+*.sqlite3*
+build/
+Payload/
+*.ipa
+.DS_Store
+ios/SmartHome/ServiceConfig.plist
+target/

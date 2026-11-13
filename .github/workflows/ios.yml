@@ -12,6 +12,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Prepare private service configuration
+        env:
+          SERVICE_TOKEN: ${{ secrets.SMART_HOME_API_TOKEN }}
+        run: |
+          python3 -c 'import os, pathlib, plistlib; token=os.environ.get("SERVICE_TOKEN", ""); assert len(token) >= 32, "SMART_HOME_API_TOKEN is missing"; pathlib.Path("ios/SmartHome/ServiceConfig.plist").write_bytes(plistlib.dumps({"API_TOKEN": token}))'
       - name: Generate project
         run: cd ios && xcodegen generate
       - name: Build unsigned app

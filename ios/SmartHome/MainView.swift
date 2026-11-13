@@ -63,7 +63,7 @@ private struct HomeView: View {
                 NavigationLink { SensorDetailView() } label: { hero }.buttonStyle(.plain)
                 if !store.error.isEmpty { ErrorNotice(message: store.error) }
                 if !store.isConfigured {
-                    Button("请先填写 API 密钥以连接") { selection = 3 }.font(.subheadline.bold()).foregroundStyle(green)
+                    Button("查看连接状态") { selection = 3 }.font(.subheadline.bold()).foregroundStyle(green)
                 }
                 sectionTitle("环境监测", note: "规划中")
                 HStack(spacing: 10) {
@@ -104,7 +104,7 @@ private struct HomeView: View {
                 if let latest = store.latest {
                     Text("更新于 " + formatTime(latest.time)).font(.caption).foregroundStyle(.white.opacity(0.95))
                 } else {
-                    Text(store.isConfigured ? "等待设备上传" : "请先在设置中填写 API 密钥")
+                    Text(store.isConfigured ? "等待设备上传" : "服务配置不可用")
                         .font(.caption).foregroundStyle(.white.opacity(0.9))
                 }
             }.padding(24)

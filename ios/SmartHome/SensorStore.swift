@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Security
 
 struct Reading: Decodable, Identifiable {
     let id: Int64
@@ -40,9 +39,9 @@ enum APIError: LocalizedError {
     case address, credentials, unauthorized, status(Int), invalidDate
     var errorDescription: String? {
         switch self {
-        case .address: return "请在设置中填写有效的 HTTPS 服务地址"
-        case .credentials: return "请在设置中填写设备编号和访问密钥"
-        case .unauthorized: return "访问密钥不正确，请检查设置"
+        case .address: return "服务器地址无效，请检查应用配置"
+        case .credentials: return "应用连接配置不完整，请联系管理员"
+        case .unauthorized: return "服务器认证失败，请联系管理员"
         case .status(let code): return "服务器返回错误（\(code)）"
         case .invalidDate: return "服务器返回了无法识别的时间"
         }
@@ -51,9 +50,9 @@ enum APIError: LocalizedError {
 
 @MainActor
 final class SensorStore: ObservableObject {
-    @AppStorage("serverURL") var serverURL = "https://home.u2483924.nyat.app:34977"
-    @AppStorage("deviceId") var deviceId = "esp32-livingroom"
-    @Published var token = ""
+    let serverURL = "https://home.u2483924.nyat.app:34977"
+    let deviceId = "esp32-livingroom"
+    private let token: String
     @Published var latest: Reading?
     @Published var history: [Reading] = []
     @Published var points: [ChartPoint] = []
@@ -62,7 +61,6 @@ final class SensorStore: ObservableObject {
     @Published var loadingMore = false
     @Published var period: Period = .day
     @Published var nextBeforeId: Int64 = 0
-    private let account = "smart-home-api-token"
     private var generation = 0
     private var loadedPeriod: Period?
     private var loadedRangeStart: Date?
@@ -70,39 +68,16 @@ final class SensorStore: ObservableObject {
 
     init(session: URLSession = .shared) {
         self.session = session
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                    kSecAttrAccount as String: account, kSecReturnData as String: true]
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
-            token = String(data: data, encoding: .utf8) ?? ""
-        }
+        if let url = Bundle.main.url(forResource: "ServiceConfig", withExtension: "plist"),
+           let dictionary = NSDictionary(contentsOf: url), let value = dictionary["API_TOKEN"] as? String {
+            token = value
+        } else { token = "" }
     }
     var isConfigured: Bool { !serverURL.isEmpty && !token.isEmpty && !deviceId.isEmpty }
     var online: Bool {
         guard let latest else { return false }
         let age = Date().timeIntervalSince(latest.receivedAt)
         return age >= -60 && age < 180
-    }
-    func saveSettings(url: String, id: String, secret: String) throws {
-        let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let components = URLComponents(string: cleanURL), components.scheme?.lowercased() == "https",
-              components.host != nil, components.user == nil, components.password == nil,
-              components.query == nil, components.fragment == nil else { throw APIError.address }
-        guard !secret.isEmpty, cleanID.range(of: "^[A-Za-z0-9_-]{1,64}$", options: .regularExpression) != nil
-        else { throw APIError.credentials }
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account]
-        let data = Data(secret.utf8)
-        let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if updateStatus == errSecItemNotFound {
-            var entry = query
-            entry[kSecValueData as String] = data
-            entry[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(entry as CFDictionary, nil) == errSecSuccess else { throw APIError.credentials }
-        } else if updateStatus != errSecSuccess { throw APIError.credentials }
-        generation += 1
-        latest = nil; history = []; points = []; nextBeforeId = 0; loadedPeriod = nil; loadedRangeStart = nil
-        serverURL = cleanURL; deviceId = cleanID; token = secret; error = ""
     }
     private func request<T: Decodable>(_ type: T.Type, suffix: String = "", query: [URLQueryItem] = []) async throws -> T {
         guard let base = URL(string: serverURL), base.scheme?.lowercased() == "https", base.host != nil else { throw APIError.address }
