@@ -64,5 +64,8 @@ public class AuthService {
     public synchronized void logout(String token) { sessions.remove(token); }
 
     /** 登录结果。 @param accessToken 访问令牌 @param expiresAt 到期时间 */
-    public record LoginResult(String accessToken, Instant expiresAt) { }
+    public record LoginResult(String accessToken, Instant expiresAt) {
+        /** 隐藏会话令牌。 @return 脱敏描述 */
+        @Override public String toString() { return "LoginResult[accessToken=REDACTED]"; }
+    }
 }
