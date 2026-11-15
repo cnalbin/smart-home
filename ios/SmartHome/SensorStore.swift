@@ -76,7 +76,7 @@ final class SensorStore: ObservableObject {
             token = String(data: data, encoding: .utf8) ?? ""
         }
     }
-    func login(username: String, password: String) async throws {
+    func login(username: String, password: String, rememberPassword: Bool = false) async throws {
         struct Response: Decodable { let accessToken: String }
         var req = URLRequest(url: URL(string: serverURL + "/api/auth/login")!)
         req.httpMethod = "POST"
@@ -88,6 +88,8 @@ final class SensorStore: ObservableObject {
         if http.statusCode == 401 { throw APIError.unauthorized }
         guard http.statusCode == 200 else { throw APIError.status(http.statusCode) }
         let value = try JSONDecoder().decode(Response.self, from: data).accessToken
+        if rememberPassword { try CredentialVault().save(RememberedLogin(username: username, password: password)) }
+        else { CredentialVault().clear() }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: "smart-home-login-session"]
         SecItemDelete(query as CFDictionary)

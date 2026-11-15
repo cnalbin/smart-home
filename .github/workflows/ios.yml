@@ -26,12 +26,36 @@ jobs:
             tail -n 80 build.log
           fi
           exit "$status"
+      - name: Test password storage and capture login screen
+        run: |
+          device=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for group in devices.values() for d in group if "iPhone" in d["name"] and d.get("isAvailable")))')
+          xcrun simctl boot "$device" || true
+          xcrun simctl bootstatus "$device" -b
+          set +e
+          xcodebuild test -project ios/SmartHome.xcodeproj -scheme SmartHome -destination "platform=iOS Simulator,id=$device" -derivedDataPath sim-build CODE_SIGNING_ALLOWED=NO > test.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -n 100 test.log
+            exit "$status"
+          fi
+          xcrun simctl status_bar "$device" override --time '9:41' --batteryState charged --batteryLevel 100
+          xcrun simctl install "$device" sim-build/Build/Products/Debug-iphonesimulator/SmartHome.app
+          xcrun simctl launch "$device" com.example.smarthome
+          sleep 3
+          xcrun simctl io "$device" screenshot login-preview.png
+      - name: Upload login preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: login-preview
+          path: login-preview.png
       - name: Upload build log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: xcode-build-log
-          path: build.log
+          path: |
+            build.log
+            test.log
       - name: Package IPA
         run: |
           mkdir -p Payload

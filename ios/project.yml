@@ -13,7 +13,27 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: 智能家居
-        MARKETING_VERSION: '1.1.0'
-        CURRENT_PROJECT_VERSION: '5'
+        MARKETING_VERSION: '1.1.1'
+        CURRENT_PROJECT_VERSION: '6'
         SWIFT_VERSION: '5.0'
         TARGETED_DEVICE_FAMILY: '1'
+  SmartHomeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SmartHomeTests]
+    dependencies:
+      - target: SmartHome
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.smarthome.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: '5.0'
+        TEST_HOST: '$(BUILT_PRODUCTS_DIR)/SmartHome.app/SmartHome'
+        BUNDLE_LOADER: '$(TEST_HOST)'
+schemes:
+  SmartHome:
+    build:
+      targets:
+        SmartHome: all
+    test:
+      targets: [SmartHomeTests]
