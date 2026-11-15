@@ -4,6 +4,9 @@ import SwiftUI
 struct SmartHomeApp: App {
     @StateObject private var store = SensorStore()
     var body: some Scene {
-        WindowGroup { MainView().environmentObject(store).preferredColorScheme(.light) }
+        WindowGroup {
+            Group { if store.isConfigured { MainView() } else { LoginView() } }
+                .environmentObject(store).preferredColorScheme(.light)
+        }
     }
 }

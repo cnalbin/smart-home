@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  rabbitmq:
+    host: ${RABBIT_HOST}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USER}
+    password: ${RABBIT_PASSWORD}
+    virtual-host: ${RABBIT_VHOST:/}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 2s
+          max-attempts: 5
+          max-interval: 30s
+          multiplier: 2
+server:
+  address: 0.0.0.0
+  port: 8080
+  error:
+    include-message: never
+app:
+  username: ${AUTH_USERNAME:root}
+  password-hash: ${AUTH_PASSWORD_HASH:$2b$12$it5iDWcg/BaDdcmh5JtI1Oy.5vqxY6PAN8xdLuB/ywvEIHz2z0it2}
+knife4j:
+  enable: false

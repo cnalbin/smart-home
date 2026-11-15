@@ -131,6 +131,7 @@ struct SettingsView: View {
             }
             Section {
                 Button("重新连接") { Task { await store.refresh() } }.foregroundStyle(green)
+                Button("退出登录", role: .destructive) { Task { await store.logout() } }
             }
             Section("说明") {
                 Text("温湿度数据约每 30 秒刷新。其他传感器和控制设备将在后续接入。")

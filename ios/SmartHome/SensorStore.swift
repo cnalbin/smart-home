@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Security
 
 struct Reading: Decodable, Identifiable {
     let id: Int64
@@ -35,7 +36,7 @@ enum Period: String, CaseIterable {
     }
 }
 
-enum APIError: LocalizedError {
+enum APIError: LocalizedError, Equatable {
     case address, credentials, unauthorized, status(Int), invalidDate
     var errorDescription: String? {
         switch self {
@@ -52,7 +53,7 @@ enum APIError: LocalizedError {
 final class SensorStore: ObservableObject {
     let serverURL = "https://home.u2483924.nyat.app:34977"
     let deviceId = "esp32-livingroom"
-    private let token: String
+    @Published private var token = ""
     @Published var latest: Reading?
     @Published var history: [Reading] = []
     @Published var points: [ChartPoint] = []
@@ -68,10 +69,46 @@ final class SensorStore: ObservableObject {
 
     init(session: URLSession = .shared) {
         self.session = session
-        if let url = Bundle.main.url(forResource: "ServiceConfig", withExtension: "plist"),
-           let dictionary = NSDictionary(contentsOf: url), let value = dictionary["API_TOKEN"] as? String {
-            token = value
-        } else { token = "" }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: "smart-home-login-session", kSecReturnData as String: true]
+        var item: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+            token = String(data: data, encoding: .utf8) ?? ""
+        }
+    }
+    func login(username: String, password: String) async throws {
+        struct Response: Decodable { let accessToken: String }
+        var req = URLRequest(url: URL(string: serverURL + "/api/auth/login")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(["username": username, "password": password])
+        req.timeoutInterval = 15
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        guard http.statusCode == 200 else { throw APIError.status(http.statusCode) }
+        let value = try JSONDecoder().decode(Response.self, from: data).accessToken
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: "smart-home-login-session"]
+        SecItemDelete(query as CFDictionary)
+        var entry = query
+        entry[kSecValueData as String] = Data(value.utf8)
+        entry[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        guard SecItemAdd(entry as CFDictionary, nil) == errSecSuccess else { throw APIError.credentials }
+        error = ""; token = value
+    }
+    func logout() async {
+        var req = URLRequest(url: URL(string: serverURL + "/api/auth/logout")!)
+        req.httpMethod = "POST"; req.timeoutInterval = 10
+        req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        clearSession()
+        _ = try? await session.data(for: req)
+    }
+    private func clearSession() {
+        generation += 1; token = ""; latest = nil; history = []; points = []; error = ""
+        nextBeforeId = 0; loadedPeriod = nil; loadedRangeStart = nil
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: "smart-home-login-session"] as CFDictionary)
     }
     var isConfigured: Bool { !serverURL.isEmpty && !token.isEmpty && !deviceId.isEmpty }
     var online: Bool {
@@ -89,11 +126,15 @@ final class SensorStore: ObservableObject {
         if !query.isEmpty { components.queryItems = query }
         guard let finalURL = components.url else { throw APIError.address }
         var request = URLRequest(url: finalURL)
-        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        let requestedToken = token
+        request.setValue("Bearer " + requestedToken, forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if response.statusCode == 401 || response.statusCode == 403 { throw APIError.unauthorized }
+        if response.statusCode == 401 || response.statusCode == 403 {
+            if token == requestedToken { clearSession() }
+            throw APIError.unauthorized
+        }
         guard response.statusCode == 200 else { throw APIError.status(response.statusCode) }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
