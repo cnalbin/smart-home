@@ -32,7 +32,7 @@ jobs:
           xcrun simctl boot "$device" || true
           xcrun simctl bootstatus "$device" -b
           set +e
-          xcodebuild test -project ios/SmartHome.xcodeproj -scheme SmartHome -destination "platform=iOS Simulator,id=$device" -derivedDataPath sim-build CODE_SIGNING_ALLOWED=NO > test.log 2>&1
+          xcodebuild test -project ios/SmartHome.xcodeproj -scheme SmartHome -destination "platform=iOS Simulator,id=$device" -derivedDataPath sim-build -parallel-testing-enabled NO CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES > test.log 2>&1
           status=$?
           if [ "$status" -ne 0 ]; then
             tail -n 100 test.log
@@ -65,4 +65,4 @@ jobs:
         with:
           name: SmartHome-unsigned-ipa
           path: SmartHome-unsigned.ipa
-          retention-days: 1
+          retention-days: 7

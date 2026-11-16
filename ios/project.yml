@@ -17,6 +17,7 @@ targets:
         CURRENT_PROJECT_VERSION: '6'
         SWIFT_VERSION: '5.0'
         TARGETED_DEVICE_FAMILY: '1'
+        'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': Simulator.entitlements
   SmartHomeTests:
     type: bundle.unit-test
     platform: iOS
