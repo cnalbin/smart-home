@@ -7,9 +7,10 @@ Spring Boot、JDK 17、RabbitMQ、InfluxDB 2.x。消费 MQTT 主题 home/livingr
 - POST /api/auth/login：JSON `{ "username": "root", "password": "用户输入的密码" }`。成功返回 accessToken、expiresAt。
 - 所有业务接口携带 `Authorization: Bearer <accessToken>`，App 自动处理，无需用户配置密钥。
 - POST /api/auth/logout：注销当前会话，成功返回 204。
-- 会话有效期 24 小时，保存在服务器内存；服务重启后需重新登录。密码以 BCrypt 摘要配置，可用 AUTH_USERNAME、AUTH_PASSWORD_HASH 环境变量覆盖默认账号配置。密码不写入 App，也不在日志中输出。
-- 登录接口每分钟全局最多 20 次请求；会话最多 1000 个。当前仅提供一个管理员账号，不含用户管理。
-- 旧的 API_TOKEN 已不再提供接口访问权限。
+- 账号保存在 MySQL app_user 表，密码只保存 BCrypt 摘要。登录从用户表查询，不再使用 AUTH_USERNAME、AUTH_PASSWORD_HASH 或内置账号兜底。首次部署初始化现有 root 账号，此后重复部署不覆盖密码。
+- 登录接口每分钟全局最多 20 次请求；会话最多 1000 个。当前不含注册和用户管理接口，新增账号需受控运维。全部启用账号具有相同的数据查询权限。
+- 会话有效期 24 小时，仍保存在服务器内存；服务重启后需重新登录。每次业务请求检查账号启用状态，禁用或删除账号后已有会话失效。修改密码不会自动撤销已发出的会话。
+- 数据库不可用时不允许使用默认凭据绕过登录。旧的 API_TOKEN 不再提供接口访问权限。
 
 ## Knife4j 接口文档
 
@@ -43,11 +44,13 @@ Spring Boot、JDK 17、RabbitMQ、InfluxDB 2.x。消费 MQTT 主题 home/livingr
 | INFLUX_ORG_ID | Bucket 所属组织 ID |
 | INFLUX_BUCKET | 默认 smart_home_sensor |
 | INFLUX_TOKEN | 仅服务端使用的 Bucket 读写 Token |
+| DB_URL | MySQL JDBC 地址，配置 connectionTimeZone=Asia/Shanghai |
+| DB_USER、DB_PASSWORD | 对 app_user 仅有 SELECT 权限的应用账号 |
 | RABBIT_HOST | RabbitMQ 地址 |
 | RABBIT_USER、RABBIT_PASSWORD | 消费账号 |
 
-可选 RABBIT_PORT（5672）、RABBIT_VHOST（/）、AUTH_USERNAME、AUTH_PASSWORD_HASH。Token 和密码通过受保护的配置注入，不提交仓库，不写入 App。数据库 Token 不代替 App 的账号登录。
+可选 RABBIT_PORT（5672）、RABBIT_VHOST（/）。Token 和密码通过受保护的配置注入，不提交仓库，不写入 App。数据库 Token 不代替 App 的账号登录。
 
-NAS 容器名 smart-home-sensor，监听局域网 10.10.10.17:8080，外网经现有 HTTPS 域名访问。NAS 运行配置加密保存于受保护的服务目录。旧 MySQL schema.sql 只保留为历史参考；新服务不需要 DB_URL、DB_USER、DB_PASSWORD。
+NAS 容器名 smart-home-sensor，监听局域网 10.10.10.17:8080，外网经现有 HTTPS 域名访问。NAS 运行配置加密保存于受保护的服务目录。schema.sql 仅定义当前 app_user 用户表；部署时由有建表权限的运维账号执行，不允许应用使用 MySQL root。连接池会设置会话为北京时间，创建和修改时间使用 DATETIME(3)。部署已移除旧 sensor_reading、sensor_migration 表，清理前在 NAS 受保护的服务目录中保存加密备份。
 
 队列 smart_home.sensor.save 独立于测试队列。同步写入 InfluxDB 成功后才确认消费，有限重试后进入失败队列 smart_home.sensor.dead。ESP32 目前 QoS 0 且无断网缓存，仍可能缺失数据。需要定期检查失败队列并备份 InfluxDB；没有实施自动补传或自动备份。

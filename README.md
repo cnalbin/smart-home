@@ -3,7 +3,7 @@
 当前链路：ESP32 DHT11 → RabbitMQ MQTT → Spring Boot → InfluxDB 2.x → iOS App。支持最新温湿度、历史分页和分钟／小时／天聚合曲线。接口时间与曲线日边界采用北京时间。
 
 - `device/esp32-mqtt/`：当前 ESP32 程序及上传步骤。配置 Wi-Fi 和 MQTT 凭据后通过 Thonny 保存至设备，GPIO 17 连接 DHT11，采样间隔由配置决定；断网不缓存补传。
-- `java-server/`：当前 Java 后端、Dockerfile、登录与业务接口、Knife4j 文档。部署与 InfluxDB 配置见该目录 README.md。新数据写入 smart_home_sensor Bucket，旧 MySQL 数据不迁移。
+- `java-server/`：当前 Java 后端、Dockerfile、登录与业务接口、Knife4j 文档。部署与 InfluxDB 配置见该目录 README.md。新数据写入 smart_home_sensor Bucket，MySQL app_user 保存应用账号与 BCrypt 密码摘要，停用的 MySQL 采样表已清理。
 - `ios/`：SwiftUI App。通过账号密码登录，不需要单独配置数据库 Token。连接现有 HTTPS 服务查看数据，支持可选记住密码。
 - `.github/workflows/ios.yml`：GitHub Actions 构建未签名 IPA。下载产物后自行签名安装，仓库不保存签名证书。
 

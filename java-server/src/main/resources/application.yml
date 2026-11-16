@@ -1,4 +1,13 @@
 spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 5000
+      validation-timeout: 2000
+      connection-init-sql: "SET time_zone = '+08:00'"
   rabbitmq:
     host: ${RABBIT_HOST}
     port: ${RABBIT_PORT:5672}
@@ -25,7 +34,5 @@ app:
   influx-org: ${INFLUX_ORG_ID}
   influx-bucket: ${INFLUX_BUCKET:smart_home_sensor}
   influx-token: ${INFLUX_TOKEN}
-  username: ${AUTH_USERNAME:root}
-  password-hash: ${AUTH_PASSWORD_HASH:$2b$12$it5iDWcg/BaDdcmh5JtI1Oy.5vqxY6PAN8xdLuB/ywvEIHz2z0it2}
 knife4j:
   enable: false
