@@ -1,6 +1,6 @@
 # Java 智能家居后端
 
-Spring Boot、JDK 17、RabbitMQ、MySQL。消费 MQTT 主题 home/livingroom/sensor 的消息并保存温湿度，按北京时间存储、查询和绘图。
+Spring Boot、JDK 17、RabbitMQ、InfluxDB 2.x。消费 MQTT 主题 home/livingroom/sensor 的消息，将新采样写入 smart_home_sensor Bucket。旧 MySQL 数据不迁移，也不再用于采样查询。
 
 ## 登录与会话
 
@@ -23,8 +23,31 @@ Spring Boot、JDK 17、RabbitMQ、MySQL。消费 MQTT 主题 home/livingroom/sen
 
 时间范围为左闭右开，参数使用带时区 ISO 8601 时间。列表最多 500 条，使用 nextBeforeId 翻页。曲线桶支持 60、3600、86400 秒，最多约 2000 个桶、366 天。按采集时间筛选，缺失时使用服务接收时间。
 
+## InfluxDB 数据模型
+
+- Bucket：smart_home_sensor；measurement：environment；tag：device_id。
+- 数值 field：temperature、humidity；元数据 field：measured_at、received_at、time_source。
+- 点时间使用可信的设备采集时刻；未校时、采集时间为空时使用服务处理时刻。服务处理时间不等于 RabbitMQ 收到消息的时间。
+- InfluxDB 按绝对时刻存储，原始时间使用 UTC 表示；API 返回北京时间（+08:00），日聚合以北京时间零点为边界。不能再额外加 8 小时写入，否则会产生偏移。
+- 列表 id 与 nextBeforeId 使用点时间的 Unix 毫秒值，仅作为数字游标，客户端不应依赖旧 MySQL 自增 ID。
+- 相同 measurement、device_id 和毫秒时间的消息会更新同一个点；缺少采集时间时，重投可能以新的服务时间写入另一点。
+- NAS 当前 Bucket 未设置到期自动删除；长期保留需另行定期备份和验证恢复。
+
 ## 部署
 
-`mvn clean package` 后构建 Dockerfile。配置 DB_URL、DB_USER、DB_PASSWORD、RABBIT_HOST、RABBIT_USER、RABBIT_PASSWORD；敏感值通过受保护的配置注入。NAS 容器名 smart-home-sensor，监听局域网 10.10.10.17:8080，外网经现有 HTTPS 域名访问。密码登录及会话令牌应通过 HTTPS 传输。现有数据库 smart_home_sensor，无需迁移历史采集表。
+执行 `mvn clean package` 后按 Dockerfile 构建，运行 JRE 17 镜像。必需环境变量：
 
-队列 smart_home.sensor.save 独立于测试队列。有限重试后进入失败队列 smart_home.sensor.dead。ESP32 目前 QoS 0 且无断网缓存，仍可能缺失数据；消息没有唯一编号，重投可能重复。应定期备份 MySQL 并验证恢复。
+| 变量 | 含义 |
+| --- | --- |
+| INFLUX_URL | InfluxDB 地址，例如 http://10.10.10.17:8086 |
+| INFLUX_ORG_ID | Bucket 所属组织 ID |
+| INFLUX_BUCKET | 默认 smart_home_sensor |
+| INFLUX_TOKEN | 仅服务端使用的 Bucket 读写 Token |
+| RABBIT_HOST | RabbitMQ 地址 |
+| RABBIT_USER、RABBIT_PASSWORD | 消费账号 |
+
+可选 RABBIT_PORT（5672）、RABBIT_VHOST（/）、AUTH_USERNAME、AUTH_PASSWORD_HASH。Token 和密码通过受保护的配置注入，不提交仓库，不写入 App。数据库 Token 不代替 App 的账号登录。
+
+NAS 容器名 smart-home-sensor，监听局域网 10.10.10.17:8080，外网经现有 HTTPS 域名访问。NAS 运行配置加密保存于受保护的服务目录。旧 MySQL schema.sql 只保留为历史参考；新服务不需要 DB_URL、DB_USER、DB_PASSWORD。
+
+队列 smart_home.sensor.save 独立于测试队列。同步写入 InfluxDB 成功后才确认消费，有限重试后进入失败队列 smart_home.sensor.dead。ESP32 目前 QoS 0 且无断网缓存，仍可能缺失数据。需要定期检查失败队列并备份 InfluxDB；没有实施自动补传或自动备份。
