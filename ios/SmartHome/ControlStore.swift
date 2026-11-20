@@ -12,13 +12,23 @@ struct ControlOutputs: Decodable {
     let rain: Int?
     let gas: Int?
     let motion: Int?
+    let rgbAdvanced: Bool?
+    let rgbRemainingSeconds: Int?
 }
 
 struct ControlSnapshot: Decodable {
     let online: Bool
     let canControl: Bool
     let servoControlAvailable: Bool
+    let seenAt: String?
     let state: ControlOutputs?
+
+    var lastSeen: Date? {
+        guard let seenAt else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: seenAt) ?? ISO8601DateFormatter().date(from: seenAt)
+    }
 }
 
 enum ControlTarget: String {
@@ -30,6 +40,7 @@ private struct ControlRequest: Encodable {
     let requestedAt: Int64
     let target: String
     let value: String
+    let durationMinutes: Int?
 }
 
 private struct ControlReceipt: Decodable {
@@ -50,29 +61,34 @@ final class ControlStore: ObservableObject {
     @Published private(set) var pendingTarget: ControlTarget?
     @Published private(set) var connectionMessage: String?
     @Published private(set) var commandMessage: String?
+    @Published private(set) var messageTarget: ControlTarget?
     private var revision = 0
     private let controlPath = ["api", "control"]
 
     var online: Bool { snapshot?.online == true && connectionMessage == nil }
     var canOperate: Bool { online && snapshot?.canControl == true && pendingTarget == nil }
     var canOperateServos: Bool { canOperate && snapshot?.servoControlAvailable == true }
+    var advancedRGB: Bool { snapshot?.state?.rgbAdvanced == true }
 
     func refresh(using session: SensorStore) async {
         guard pendingTarget == nil else { return }
         await loadSnapshot(using: session)
     }
 
-    func send(_ target: ControlTarget, value: String, using session: SensorStore) async {
+    @discardableResult
+    func send(_ target: ControlTarget, value: String, durationMinutes: Int? = nil, using session: SensorStore) async -> Bool {
         let servo = target == .door || target == .window
-        guard servo ? canOperateServos : canOperate else { return }
+        guard servo ? canOperateServos : canOperate else { return false }
         revision += 1
         pendingTarget = target
+        messageTarget = target
         commandMessage = nil
         defer { pendingTarget = nil }
 
         let id = UUID()
         let request = ControlRequest(id: id, requestedAt: Int64(Date().timeIntervalSince1970 * 1000),
-                                     target: target.rawValue, value: value)
+                                     target: target.rawValue, value: value, durationMinutes: durationMinutes)
+        var applied = false
         do {
             let receipt = try await submit(request, using: session)
             guard receipt.id == id else { throw URLError(.badServerResponse) }
@@ -82,6 +98,7 @@ final class ControlStore: ObservableObject {
             }
             switch status {
             case .applied:
+                applied = true
                 if servo { commandMessage = "舵机指令已执行，门窗实际位置未确认" }
             case .rejected:
                 commandMessage = "设备未执行，请刷新状态后再操作"
@@ -89,7 +106,7 @@ final class ControlStore: ObservableObject {
                 commandMessage = "执行结果未知，请核对设备状态"
             }
         } catch is CancellationError {
-            return
+            return false
         } catch APIError.status(403) {
             commandMessage = "当前账号没有此设备的控制权限"
         } catch APIError.status(409) {
@@ -98,10 +115,13 @@ final class ControlStore: ObservableObject {
             commandMessage = "控制板离线，请稍后再试"
         } catch APIError.status(400) {
             commandMessage = "指令无效，请检查手机时间后再试"
+        } catch APIError.status(422) {
+            commandMessage = "当前控制板固件需要更新"
         } catch {
             commandMessage = "执行结果未知，请核对设备状态"
         }
         await loadSnapshot(using: session)
+        return applied
     }
 
     private func loadSnapshot(using session: SensorStore) async {

@@ -5,325 +5,239 @@ struct DevicesView: View {
     @EnvironmentObject private var session: SensorStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("设备").font(.largeTitle.bold()).foregroundStyle(ink)
-                    HStack(spacing: 8) {
-                        Circle().fill(control.online ? green : Color.secondary).frame(width: 9, height: 9)
-                        Text("客厅 · " + connectionLabel).font(.subheadline).foregroundStyle(ink)
-                    }
-                }
-                if let message = control.connectionMessage {
-                    controlNotice(message)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    section("设备控制", symbol: "slider.horizontal.3")
+        DashboardPage {
+            DashboardHeading(title: "设备", subtitle: "客厅", showsConnection: true)
+            section("照明与风扇") {
+                DashboardCard {
                     VStack(spacing: 0) {
-                        switchRow("黄灯", symbol: "lightbulb", target: .light, enabled: control.snapshot?.state?.light)
-                        separator
-                        switchRow("风扇", symbol: "fan", target: .fan, enabled: control.snapshot?.state?.fan)
-                        separator
-                        NavigationLink {
-                            LampControlView()
-                        } label: {
-                            deviceRow("RGB 灯", symbol: "circle.hexagongrid", detail: lampName, dot: lampColor)
-                        }.buttonStyle(.plain)
-                        separator
-                        NavigationLink {
-                            ServoControlView()
-                        } label: {
-                            deviceRow("门窗", symbol: "door.left.hand.closed", detail: "状态未确认")
-                        }.buttonStyle(.plain)
-                    }.background(.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 17))
-
-                    if let message = control.commandMessage {
-                        controlNotice(message)
-                    } else if control.snapshot?.canControl == false {
-                        controlNotice("当前账号仅可查看设备")
+                        SwitchDeviceRow(device: .light)
+                        Divider().padding(.leading, 64)
+                        RGBDeviceLink()
+                        Divider().padding(.leading, 64)
+                        SwitchDeviceRow(device: .fan)
                     }
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    section("环境监测", symbol: "leaf")
-                    VStack(spacing: 0) {
-                        HStack(spacing: 14) {
-                            metric("温度", symbol: "thermometer.medium", reading: control.snapshot?.state?.temperature,
-                                   unit: "°C")
-                            Divider().frame(height: 46)
-                            metric("湿度", symbol: "drop", reading: control.snapshot?.state?.humidity, unit: "%")
-                        }.padding(16)
-                        Divider().padding(.horizontal, 16)
-                        NavigationLink {
-                            ControlSensorsView()
-                        } label: {
-                            HStack {
-                                Text("查看传感器").foregroundStyle(ink)
-                                Spacer()
-                                chevron
-                            }.padding(16).frame(minHeight: 44).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                    }.background(.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 17))
-                    if !control.online && control.snapshot?.state != nil {
-                        Text("以上为上次上报的读数").font(.caption).foregroundStyle(.secondary)
-                    }
+            }
+            section("开合控制") {
+                DashboardCard { ServoDeviceLink(device: .door) }
+                DashboardCard { ServoDeviceLink(device: .window) }
+            }
+            section("传感器") {
+                DashboardCard {
+                    NavigationLink { EnvironmentView() } label: {
+                        HStack(spacing: 10) {
+                            DeviceIcon(symbol: "thermometer.medium")
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("环境监测").font(.subheadline.bold()).foregroundStyle(ink)
+                                Text("温湿度、雨水、气体、人体").font(.caption).foregroundStyle(muted)
+                            }
+                            Spacer(minLength: 4)
+                            Chevron()
+                        }.padding(12).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
-            }.padding(.horizontal, 20).padding(.vertical, 22)
+            }
+            ControlFeedback(target: control.messageTarget)
         }
-        .background(canvas)
+        .navigationTitle("设备")
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await control.refresh(using: session) }
     }
 
-    private var connectionLabel: String {
-        if control.connectionMessage != nil { return "连接异常" }
-        if control.snapshot == nil { return "正在连接" }
-        return control.online ? "在线" : "离线"
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline).foregroundStyle(ink).accessibilityAddTraits(.isHeader)
+            content()
+        }
     }
+}
 
-    private var lamp: LampMode? {
-        guard let mode = control.snapshot?.state?.rgb else { return nil }
-        return LampMode(rawValue: mode)
+enum SwitchDevice {
+    case light, fan
+
+    var title: String { self == .light ? "黄灯" : "风扇" }
+    var symbol: String { self == .light ? "lightbulb" : "fan" }
+    var target: ControlTarget { self == .light ? .light : .fan }
+
+    func isOn(in state: ControlOutputs?) -> Bool? {
+        self == .light ? state?.light : state?.fan
     }
+}
 
-    private var lampName: String { control.pendingTarget == .rgb ? "正在执行…" : lamp?.title ?? "状态未知" }
-    private var lampColor: Color? { lamp?.color }
+struct SwitchDeviceRow: View {
+    @EnvironmentObject private var session: SensorStore
+    @EnvironmentObject private var control: ControlStore
+    let device: SwitchDevice
+    var compact = false
 
-    private var separator: some View { Divider().padding(.leading, 68).padding(.trailing, 14) }
-    private var chevron: some View {
-        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-            .accessibilityHidden(true)
-    }
-
-    private func section(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol).foregroundStyle(green).accessibilityHidden(true)
-            Text(title).foregroundStyle(ink)
-        }.font(.title3.bold()).accessibilityAddTraits(.isHeader)
-    }
-
-    private func switchRow(_ title: String, symbol: String, target: ControlTarget, enabled: Bool?) -> some View {
-        let busy = control.pendingTarget == target
-        let detail = busy ? "正在执行…" : enabled.map { $0 ? "已开启" : "已关闭" } ?? "状态未知"
-        return HStack(spacing: 12) {
-            icon(symbol)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline).foregroundStyle(ink)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if busy {
-                ProgressView().accessibilityLabel("正在执行")
-            } else {
-                Toggle(title, isOn: Binding(get: { enabled == true }, set: { desired in
-                    Task { await control.send(target, value: desired ? "on" : "off", using: session) }
-                }))
-                .labelsHidden()
-                .disabled(!control.canOperate || enabled == nil)
-                .accessibilityLabel(title)
-                .accessibilityValue(detail)
-            }
-        }.padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 59)
-    }
-
-    private func deviceRow(_ title: String, symbol: String, detail: String, dot: Color? = nil) -> some View {
-        HStack(spacing: 12) {
-            icon(symbol)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline).foregroundStyle(ink)
-                HStack(spacing: 6) {
-                    if let dot {
-                        Circle().fill(dot).overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 1))
-                            .frame(width: 12, height: 12).accessibilityHidden(true)
-                    }
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+    var body: some View {
+        let reported = device.isOn(in: control.snapshot?.state)
+        let pending = control.pendingTarget == device.target
+        HStack(spacing: compact ? 6 : 10) {
+            DeviceIcon(symbol: device.symbol, foreground: device == .light ? .orange : blue, size: compact ? 33 : 42)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.title).font(.subheadline.bold()).foregroundStyle(ink)
+                Text(status(reported, pending: pending)).font(.caption2).foregroundStyle(muted)
+            }.accessibilityHidden(true)
+            Spacer(minLength: 0)
+            Toggle(device.title, isOn: Binding(
+                get: { reported == true },
+                set: { next in
+                    Task { await control.send(device.target, value: next ? "on" : "off", using: session) }
                 }
-            }
-            Spacer()
-            chevron
-        }.padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 59).contentShape(Rectangle())
+            ))
+            .labelsHidden()
+            .tint(blue)
+            .scaleEffect(compact ? 0.82 : 0.94, anchor: .trailing)
+            .fixedSize()
+            .disabled(!control.canOperate || reported == nil)
+            .accessibilityValue(status(reported, pending: pending))
+        }.padding(compact ? 9 : 12)
     }
 
-    private func icon(_ symbol: String) -> some View {
-        Image(systemName: symbol).font(.title3).foregroundStyle(green)
-            .frame(width: 43, height: 43)
-            .background(green.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-            .accessibilityHidden(true)
-    }
-
-    private func metric(_ title: String, symbol: String, reading: Int?, unit: String) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: symbol).font(.title2).foregroundStyle(green).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.subheadline).foregroundStyle(.secondary)
-                Text(reading.map { "\($0)\(unit)" } ?? "—").font(.title2.bold()).foregroundStyle(ink)
-                    .minimumScaleFactor(0.7).lineLimit(1)
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+    private func status(_ reported: Bool?, pending: Bool) -> String {
+        if pending { return "执行中" }
+        guard let reported else { return "未知" }
+        return reported ? "已开启" : "已关闭"
     }
 }
 
-private func controlNotice(_ value: String) -> some View {
-    Label(value, systemImage: "exclamationmark.circle").font(.footnote)
-        .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+struct RGBDeviceLink: View {
+    @EnvironmentObject private var control: ControlStore
+
+    var body: some View {
+        NavigationLink { RGBControlView() } label: {
+            HStack(spacing: 10) {
+                DeviceIcon(symbol: "circle.hexagongrid")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("RGB 灯").font(.subheadline.bold()).foregroundStyle(ink)
+                    HStack(spacing: 5) {
+                        if let color = LampState.color(for: control.snapshot?.state?.rgb) {
+                            Circle().fill(color).overlay(Circle().strokeBorder(ink.opacity(0.15)))
+                                .frame(width: 9, height: 9).accessibilityHidden(true)
+                        }
+                        Text(LampState.title(for: control.snapshot?.state?.rgb)).font(.caption).foregroundStyle(muted)
+                    }
+                }
+                Spacer(minLength: 4)
+                Chevron()
+            }.padding(12).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
 }
 
-private enum LampMode: String, CaseIterable, Identifiable {
-    case off, red, orange, yellow, green, cyan, blue, purple, white, rainbow, chase
+struct ControlFeedback: View {
+    @EnvironmentObject private var control: ControlStore
+    let target: ControlTarget?
 
-    var id: String { rawValue }
+    var body: some View {
+        if let target, target == control.pendingTarget {
+            ProgressView("等待设备回执…").font(.footnote).foregroundStyle(muted)
+        } else if let message = message {
+            Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(muted)
+        }
+    }
 
+    private var message: String? {
+        if target != nil, target == control.messageTarget, let text = control.commandMessage { return text }
+        if let text = control.connectionMessage { return text }
+        if control.snapshot?.canControl == false { return "当前账号仅可查看设备" }
+        return nil
+    }
+}
+
+enum BoardSensor: String, CaseIterable, Identifiable {
+    case rain, gas, motion
+
+    var id: Self { self }
     var title: String {
         switch self {
-        case .off: return "已关闭"
-        case .red: return "红色"
-        case .orange: return "橙色"
-        case .yellow: return "暖黄色"
-        case .green: return "绿色"
-        case .cyan: return "蓝绿色"
-        case .blue: return "蓝色"
-        case .purple: return "紫色"
-        case .white: return "白色"
-        case .rainbow: return "彩虹"
-        case .chase: return "跑灯"
+        case .rain: return "雨水"
+        case .gas: return "气体"
+        case .motion: return "人体"
         }
     }
-
-    var color: Color? {
+    var fullTitle: String {
         switch self {
-        case .red: return .red
-        case .orange: return .orange
-        case .yellow: return Color(red: 1, green: 0.75, blue: 0.20)
-        case .green: return .green
-        case .cyan: return .cyan
-        case .blue: return .blue
-        case .purple: return .purple
-        case .white: return .white
-        case .off, .rainbow, .chase: return nil
+        case .rain: return "雨水传感器"
+        case .gas: return "气体传感器"
+        case .motion: return "人体感应"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .rain: return "cloud.rain"
+        case .gas: return "flame"
+        case .motion: return "figure.walk.motion"
+        }
+    }
+    var unit: String { self == .rain ? "原始值" : "电平" }
+
+    func reading(in state: ControlOutputs?) -> Int? {
+        switch self {
+        case .rain: return state?.rain
+        case .gas: return state?.gas
+        case .motion: return state?.motion
         }
     }
 }
 
-private struct LampControlView: View {
+struct SensorTile: View {
+    let sensor: BoardSensor
+    let reading: Int?
+
+    var body: some View {
+        DashboardCard {
+            VStack(spacing: 2) {
+                HStack(spacing: 4) {
+                    DeviceIcon(symbol: sensor.symbol, size: 25)
+                    Text(sensor.title).font(.caption.bold())
+                }
+                Text(reading.map(String.init) ?? "—").font(.title3.bold()).monospacedDigit()
+                Text(sensor.unit).font(.caption2).foregroundStyle(muted)
+            }.padding(.vertical, 8).frame(maxWidth: .infinity)
+        }.foregroundStyle(ink).accessibilityElement(children: .combine)
+    }
+}
+
+struct EnvironmentView: View {
     @EnvironmentObject private var control: ControlStore
     @EnvironmentObject private var session: SensorStore
 
     var body: some View {
-        List {
-            Section("颜色与灯效") {
-                ForEach(LampMode.allCases.filter { $0 != .off }) { mode in
-                    Button {
-                        Task { await control.send(.rgb, value: mode.rawValue, using: session) }
-                    } label: {
+        DashboardPage {
+            HStack {
+                Text(control.online ? "最近上报" : "上次上报 · ESP32 未连接")
+                Spacer()
+                Text(control.snapshot?.lastSeen.map { formatTime($0, "HH:mm") } ?? "—")
+            }.font(.subheadline).foregroundStyle(muted)
+            EnvironmentCard(
+                title: nil,
+                temperature: value(control.snapshot?.state?.temperature.map(Double.init), unit: "°C", decimals: 0),
+                humidity: value(control.snapshot?.state?.humidity.map(Double.init), unit: "%", decimals: 0)
+            ) { EmptyView() }
+            Text("传感器读数").font(.headline).foregroundStyle(ink).padding(.top, 8)
+            DashboardCard {
+                VStack(spacing: 0) {
+                    ForEach(BoardSensor.allCases) { sensor in
                         HStack(spacing: 12) {
-                            if let color = mode.color {
-                                Circle().fill(color).overlay(Circle().strokeBorder(.black.opacity(0.15)))
-                                    .frame(width: 22, height: 22).accessibilityHidden(true)
-                            } else {
-                                Image(systemName: "sparkles").frame(width: 22).accessibilityHidden(true)
-                            }
-                            Text(mode.title).foregroundStyle(ink)
+                            DeviceIcon(symbol: sensor.symbol, size: 48)
+                            Text(sensor.fullTitle).font(.subheadline.bold()).foregroundStyle(ink)
                             Spacer()
-                            if control.snapshot?.state?.rgb == mode.rawValue {
-                                Image(systemName: "checkmark").foregroundStyle(green)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(sensor.reading(in: control.snapshot?.state).map(String.init) ?? "—")
+                                    .font(.title2.bold()).monospacedDigit().foregroundStyle(ink)
+                                Text(sensor.unit).font(.caption2).foregroundStyle(muted)
                             }
-                        }.frame(minHeight: 36).contentShape(Rectangle())
-                    }.disabled(!control.canOperate)
+                        }.padding(12).accessibilityElement(children: .combine)
+                        if sensor != .motion { Divider().padding(.leading, 67) }
+                    }
                 }
             }
-            Button("关闭 RGB 灯") {
-                Task { await control.send(.rgb, value: LampMode.off.rawValue, using: session) }
-            }.disabled(!control.canOperate)
-            if control.pendingTarget == .rgb { ProgressView("正在执行…") }
-            if let message = control.commandMessage ?? control.connectionMessage { controlNotice(message) }
         }
-        .scrollContentBackground(.hidden)
-        .background(canvas)
-        .navigationTitle("RGB 灯")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-    }
-}
-
-private struct ServoControlView: View {
-    private struct Action {
-        let title: String
-        let target: ControlTarget
-        let value: String
-    }
-
-    @EnvironmentObject private var control: ControlStore
-    @EnvironmentObject private var session: SensorStore
-    @State private var action: Action?
-    @State private var confirm = false
-
-    var body: some View {
-        List {
-            Section("门") {
-                Text(targetLabel(control.snapshot?.state?.doorTarget)).foregroundStyle(.secondary)
-                controlButton("开门", target: .door, value: "open")
-                controlButton("关门", target: .door, value: "closed")
-            }
-            Section("窗") {
-                Text(targetLabel(control.snapshot?.state?.windowTarget)).foregroundStyle(.secondary)
-                controlButton("开窗", target: .window, value: "open")
-                controlButton("关窗", target: .window, value: "closed")
-            }
-            if control.pendingTarget == .door || control.pendingTarget == .window { ProgressView("正在执行…") }
-            if let message = control.commandMessage ?? control.connectionMessage {
-                controlNotice(message)
-            } else if control.snapshot?.servoControlAvailable != true {
-                controlNotice("门窗控制尚未启用或当前账号无权限")
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(canvas)
-        .navigationTitle("门窗")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .confirmationDialog("确认门窗操作", isPresented: $confirm, titleVisibility: .visible, presenting: action) { item in
-            Button("确认" + item.title) {
-                Task { await control.send(item.target, value: item.value, using: session) }
-            }
-            Button("取消", role: .cancel) {}
-        } message: { _ in
-            Text("请确认门窗周围无人或障碍物。")
-        }
-    }
-
-    private func controlButton(_ title: String, target: ControlTarget, value: String) -> some View {
-        Button(title) {
-            action = Action(title: title, target: target, value: value)
-            confirm = true
-        }.disabled(!control.canOperateServos)
-    }
-
-    private func targetLabel(_ target: String?) -> String {
-        guard let target else { return "位置未确认" }
-        return (target == "open" ? "上次指令：打开" : "上次指令：关闭") + " · 位置未确认"
-    }
-}
-
-private struct ControlSensorsView: View {
-    @EnvironmentObject private var control: ControlStore
-
-    var body: some View {
-        List {
-            Section(control.online ? "最近上报" : "上次上报 · 设备离线") {
-                sensor("温度", value: control.snapshot?.state?.temperature, unit: " °C")
-                sensor("湿度", value: control.snapshot?.state?.humidity, unit: " %")
-                sensor("雨水原始值", value: control.snapshot?.state?.rain)
-                sensor("气体传感器电平", value: control.snapshot?.state?.gas)
-                sensor("人体传感器电平", value: control.snapshot?.state?.motion)
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(canvas)
         .navigationTitle("环境监测")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-    }
-
-    private func sensor(_ title: String, value: Int?, unit: String = "") -> some View {
-        LabeledContent(title, value: value.map { "\($0)\(unit)" } ?? "—")
+        .refreshable { await control.refresh(using: session) }
     }
 }
