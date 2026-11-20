@@ -119,25 +119,10 @@ final class SensorStore: ObservableObject {
         return age >= -60 && age < 180
     }
     private func request<T: Decodable>(_ type: T.Type, suffix: String = "", query: [URLQueryItem] = []) async throws -> T {
-        guard let base = URL(string: serverURL), base.scheme?.lowercased() == "https", base.host != nil else { throw APIError.address }
-        guard !token.isEmpty, !deviceId.isEmpty else { throw APIError.credentials }
-        let endpoint = base.appendingPathComponent("api").appendingPathComponent("devices")
-            .appendingPathComponent(deviceId).appendingPathComponent("readings")
-        let url = suffix.isEmpty ? endpoint : endpoint.appendingPathComponent(suffix)
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw APIError.address }
-        if !query.isEmpty { components.queryItems = query }
-        guard let finalURL = components.url else { throw APIError.address }
-        var request = URLRequest(url: finalURL)
-        let requestedToken = token
-        request.setValue("Bearer " + requestedToken, forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
-        let (data, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if response.statusCode == 401 || response.statusCode == 403 {
-            if token == requestedToken { clearSession() }
-            throw APIError.unauthorized
-        }
-        guard response.statusCode == 200 else { throw APIError.status(response.statusCode) }
+        guard !deviceId.isEmpty else { throw APIError.credentials }
+        var path = ["api", "devices", deviceId, "readings"]
+        if !suffix.isEmpty { path.append(suffix) }
+        let data = try await authorizedData(path: path, query: query, expireOnForbidden: true)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let raw = try decoder.singleValueContainer().decode(String.self)
@@ -148,6 +133,37 @@ final class SensorStore: ObservableObject {
             throw APIError.invalidDate
         }
         return try decoder.decode(type, from: data)
+    }
+
+    func authorizedData(path: [String], query: [URLQueryItem] = [], body: Data? = nil,
+                        expireOnForbidden: Bool = false) async throws -> Data {
+        guard let base = URL(string: serverURL), base.scheme?.lowercased() == "https", base.host != nil else {
+            throw APIError.address
+        }
+        guard !token.isEmpty else { throw APIError.credentials }
+        let url = path.reduce(base) { $0.appendingPathComponent($1) }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw APIError.address }
+        if !query.isEmpty { components.queryItems = query }
+        guard let finalURL = components.url else { throw APIError.address }
+        var request = URLRequest(url: finalURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let body {
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let requestedToken = token
+        request.setValue("Bearer " + requestedToken, forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard token == requestedToken else { throw CancellationError() }
+        if response.statusCode == 401 || (expireOnForbidden && response.statusCode == 403) {
+            clearSession()
+            throw APIError.unauthorized
+        }
+        guard response.statusCode == (body == nil ? 200 : 202) else { throw APIError.status(response.statusCode) }
+        return data
     }
     private func dateString(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
     private func rangeQuery(_ period: Period) -> [URLQueryItem] {

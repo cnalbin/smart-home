@@ -21,8 +21,10 @@ func value(_ value: Double?, unit: String, decimals: Int) -> String {
 
 struct MainView: View {
     @EnvironmentObject private var store: SensorStore
+    @StateObject private var controlStore = ControlStore()
     @State private var selection = 0
     @Environment(\.scenePhase) private var scenePhase
+    private var controlVisible: Bool { selection == 1 && scenePhase == .active }
     private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     var body: some View {
         TabView(selection: $selection) {
@@ -36,6 +38,14 @@ struct MainView: View {
                 .tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
         }
         .tint(green)
+        .environmentObject(controlStore)
+        .task(id: controlVisible) {
+            guard controlVisible else { return }
+            while !Task.isCancelled {
+                await controlStore.refresh(using: store)
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
         .task { await store.refresh() }
         .onChange(of: store.period) { _ in Task { await store.refresh() } }
         .onReceive(timer) { _ in
@@ -66,19 +76,18 @@ private struct HomeView: View {
                 if !store.isConfigured {
                     Button("查看连接状态") { selection = 3 }.font(.subheadline.bold()).foregroundStyle(green)
                 }
-                sectionTitle("环境监测", note: "规划中")
-                HStack(spacing: 10) {
-                    PlaceholderTile(title: "气体检测", symbol: "wind")
-                    PlaceholderTile(title: "雨水检测", symbol: "cloud.rain")
-                    PlaceholderTile(title: "人体感应", symbol: "figure.wave")
+                Button {
+                    selection = 1
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "slider.horizontal.3").foregroundStyle(green)
+                        Text("设备控制").font(.headline).foregroundStyle(ink)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }.padding(18).background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
                 }
-                Divider()
-                sectionTitle("设备控制", note: "规划中")
-                HStack(spacing: 10) {
-                    PlaceholderTile(title: "灯光", symbol: "lightbulb")
-                    PlaceholderTile(title: "风扇", symbol: "fan")
-                    PlaceholderTile(title: "门窗", symbol: "door.left.hand.closed")
-                }
+                .buttonStyle(.plain)
             }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 28)
         }.background(canvas).toolbar(.hidden, for: .navigationBar)
             .refreshable { await store.refresh() }
@@ -119,57 +128,10 @@ private struct HomeView: View {
     }
 }
 
-private func sectionTitle(_ title: String, note: String) -> some View {
-    HStack { Text(title).font(.headline).foregroundStyle(ink); Text("（\(note)）").font(.subheadline).foregroundStyle(.secondary); Spacer() }
-}
-private struct PlaceholderTile: View {
-    let title: String
-    let symbol: String
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 25)).foregroundStyle(.secondary)
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(ink).lineLimit(1).minimumScaleFactor(0.8)
-            Text("待接入").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 9).padding(.vertical, 4)
-                .background(.black.opacity(0.05), in: Capsule())
-        }.frame(maxWidth: .infinity).frame(height: 112).background(card, in: RoundedRectangle(cornerRadius: 15))
-            .accessibilityElement(children: .combine)
-    }
-}
 private struct ErrorNotice: View {
     let message: String
     var body: some View {
         Label(message, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct DevicesView: View {
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text("设备").font(.system(size: 34, weight: .bold)).foregroundStyle(ink)
-                group("环境监测", symbol: "leaf", items: [("气体", "wind"), ("雨水", "cloud.rain"), ("人体", "figure.wave")])
-                group("设备控制", symbol: "slider.horizontal.3", items: [("灯光", "lightbulb"), ("风扇", "fan"), ("门窗", "door.left.hand.closed")])
-                group("安防与识别", symbol: "shield", items: [("RFID（门禁识别）", "creditcard"), ("语音（语音控制）", "mic")])
-            }.padding(20)
-        }.background(canvas).toolbar(.hidden, for: .navigationBar)
-    }
-    private func group(_ title: String, symbol: String, items: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: symbol).font(.title3.bold()).foregroundStyle(ink).symbolRenderingMode(.hierarchical)
-            VStack(spacing: 0) {
-                ForEach(items.indices, id: \.self) { index in
-                    HStack(spacing: 14) {
-                        Image(systemName: items[index].1).font(.title3).foregroundStyle(.secondary)
-                            .frame(width: 43, height: 43).background(green.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
-                        Text(items[index].0).font(.subheadline.weight(.medium)).foregroundStyle(ink)
-                        Spacer()
-                        Text("待接入").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(.black.opacity(0.05), in: Capsule())
-                    }.padding(.horizontal, 14).padding(.vertical, 8)
-                    if index < items.count - 1 { Divider().padding(.leading, 70) }
-                }
-            }.background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
-        }
     }
 }
